@@ -627,10 +627,12 @@ cleanup_self_managed_infrastructure() {
     fi
 
     echo "  Removing self-deployed infrastructure..."
+    kubectl delete secret mlflow-db-credentials --ignore-not-found -n "$NAMESPACE" 2>/dev/null || true
     kustomize build "$TEST_INFRA_ROOT/postgres/$postgres_overlay" \
         | kubectl delete --ignore-not-found -n "$NAMESPACE" -f - 2>/dev/null || true
 
     if [ "$wait_for_delete" = "true" ]; then
+        kubectl wait --for=delete secret/mlflow-db-credentials --namespace "$NAMESPACE" --timeout=180s 2>/dev/null || true
         kubectl wait --for=delete deployment/postgres-deployment --namespace "$NAMESPACE" --timeout=180s 2>/dev/null || true
         kubectl wait --for=delete pod -l app=mlflow-postgres --namespace "$NAMESPACE" --timeout=180s 2>/dev/null || true
         kubectl wait --for=delete pvc/postgres-pvc --namespace "$NAMESPACE" --timeout=180s 2>/dev/null || true
@@ -1353,6 +1355,9 @@ run_suite_body() {
         s3|externals3) export artifact_storage="s3" ;;
         *)             export artifact_storage="$STORAGE_TYPE" ;;
     esac
+    # Keep the unnormalised backend available to tests that need to distinguish
+    # the self-hosted SeaweedFS path from an externally managed S3 service.
+    export artifact_backend="$STORAGE_TYPE"
     # deploy.py defaults --serve-artifacts to "true"; export the same default so
     # Config.SERVE_ARTIFACTS stays in sync if the default ever changes.
     export serve_artifacts="${SERVE_ARTIFACTS}"
